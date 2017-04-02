@@ -5,26 +5,167 @@ date: "31 marzo 2017"
 output: html_document
 ---
 
+## Synopsis 
+This analysis involves the use of the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database in order to show the impact of the atmospheric events in US.
+
+The purposse of the analysis is to answer the following question:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+
 ```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE)
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r import,echo=TRUE}
+library(reshape2)
+#library(lubridate)
+#library(lattice)
 ```
 
-## Including Plots
+## Data Processing
+Firstly, the data is loaded into R from the source https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2. This preprocessing is a time-consuming operation, so it is used the `cache = TRUE`. The dataset contains 37 different field, and only some of them are usefull for our purpose. 
 
-You can also embed plots, for example:
+The fields loaded are: 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+* `EVTYPE`: event type (tornado, heat, ..)
+* `FATALITIES`: number of fatalities 
+* `INJURIES`: number of injuries
+* `PROPDMG`: property damage `[$]`
+* `PROPDMGEXP`: property damage exponential factor. They are considered only `K` (thousand), `M` (milion) and `B` (bilion)
+* `CROPDMG`: crop damage `[$]`
+* `CROPDMGEXP`: crop damage exponential factor. They are considered only `K` (thousand), `M` (milion) and `B` (bilion)
+
+```{r loadingData,echo = TRUE,cache = TRUE}
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+filename <- "weatherUS.csv.bz2"
+
+
+if (!file.exists(filename)){ 
+        download.file(url,filename)
+}
+if (!exists("weatherUS")){
+  weatherUS <- read.csv(filename,colClasses = c(rep("NULL",7),#skip 7 fields
+                                                "factor",#EVTYPE
+                                                rep("NULL",14),#skip 14 fields
+                                                "numeric",#FATALITIES
+                                                "numeric",#INJURIES
+                                                "numeric",#PROPDMG
+                                                "character",#PROPDMGEXP
+                                                "numeric",#CROPDMG
+                                                "character",#CROPDMGEXP
+                                                rep("NULL",9)#skip 9 fields
+                                                )
+                        )
+}
+```
+## Conversion
+
+Here it is Made a conversion of property and crop damage using the exponential factors. The `PROPDMGEXP` and `CROPDMGEXP` entries which contain values different from number will introduce `NA`. This entries are ignored for this analysis. 
+
+```{r damageConversion,echo=TRUE,warning=FALSE}
+weatherUS$PROPDMGEXP <- gsub(pattern = "K|k",replacement = "1000",x = weatherUS$PROPDMGEXP)
+weatherUS$PROPDMGEXP <- gsub(pattern = "M|m",replacement = "1000000",x = weatherUS$PROPDMGEXP)
+weatherUS$PROPDMGEXP <- gsub(pattern = "B|b",replacement = "1000000000",x = weatherUS$PROPDMGEXP)
+
+weatherUS$CROPDMGEXP <- gsub(pattern = "K|k",replacement = "1000",x = weatherUS$CROPDMGEXP)
+weatherUS$CROPDMGEXP <- gsub(pattern = "M|m",replacement = "1000000",x = weatherUS$CROPDMGEXP)
+weatherUS$CROPDMGEXP <- gsub(pattern = "B|b",replacement = "1000000000",x = weatherUS$CROPDMGEXP)
+
+weatherUS$PROPDMGTOT <- (weatherUS$PROPDMG * as.numeric(weatherUS$PROPDMGEXP))
+weatherUS$PROPDMGTOT[is.na(weatherUS$PROPDMGTOT)] <- 0
+weatherUS$CROPDMGTOT <- (weatherUS$CROPDMG * as.numeric(weatherUS$CROPDMGEXP))
+weatherUS$CROPDMGTOT[is.na(weatherUS$CROPDMGTOT)] <- 0
+weatherUS$DMGTOT <- (weatherUS$PROPDMGTOT + weatherUS$CROPDMGTOT)
+```
+# Tranformation data
+
+First of all, it is created a list of dataframe, one for each event type of the `EVTYPE` field Using the `split()` function. For each of this event it is calculated the number of fatalities/injuries and the property/corp damage `[B$]`. These lists are ordered in order to answer to the question of the analysis.
+
+```{r processingData,echo=TRUE}
+weatherUSEvent <- split(x = weatherUS,f = weatherUS$EVTYPE)
+
+fatalities <- sapply(X = weatherUSEvent,FUN = function(x){sum(x$FATALITIES)})
+injuries <- sapply(X = weatherUSEvent,FUN = function(x){sum(x$INJURIES)})
+
+fatalities <- fatalities[order(fatalities,decreasing = TRUE)]
+injuries <- injuries[order(injuries,decreasing = TRUE)]
+
+propDamage <- sapply(X = weatherUSEvent,FUN = function(x){sum(x$PROPDMGTOT,na.rm = TRUE)}) / 1000000000
+cropDamage <- sapply(X = weatherUSEvent,FUN = function(x){sum(x$CROPDMGTOT,na.rm = TRUE)}) / 1000000000
+totalDamage <- sapply(X = weatherUSEvent,FUN = function(x){sum(x$DMGTOT,na.rm = TRUE)}) / 1000000000
+
+
+propDamage <- propDamage[order(propDamage,decreasing = TRUE)]
+cropDamage <- cropDamage[order(cropDamage,decreasing = TRUE)]
+totalDamage <- totalDamage[order(totalDamage,decreasing = TRUE)]
+
+propDamage[1:5]
+cropDamage[1:5]
+totalDamage[1:5]
+
+```
+## Results
+
+```{r fatalitis,echo=TRUE,fig.height = 7}
+par(mar = c(15,4,2,2))
+barplot(fatalities[1:20],
+        main = "Fatalitis in US due to atmospheric events since 1950",
+        ylab = "Fatalitis Number (log scale)",
+        cex.names=1,
+        log="y",
+        las=2)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r fatalitisTable,echo=TRUE}
+as.list(fatalities[1:5])
+```
+
+```{r injuries,echo=TRUE,fig.height = 10}
+par(mar = c(15,4,2,2))
+barplot(injuries[1:20],
+        main = "Injuries in US due to atmospheric events since 1950",
+        ylab = "Injuries Number (log scale)",
+        cex.names=1,
+        log="y",
+        las=2)
+
+```
+
+```{r injuriesTable,echo=TRUE}
+as.list(injuries[1:5])
+```
+
+```{r prodDamage,echo=TRUE}
+par(mar = c(15,4,2,2))
+barplot(propDamage[1:10],
+        main = "Property damage in US due to atmospheric events since 1950 [B$]",
+        ylab = "Property damage [B$]",
+        cex.names=1,
+        las=2)
+
+```
+
+```{r cropDamage,echo=TRUE}
+par(mar = c(15,4,2,2))
+barplot(cropDamage[1:10],
+        main = "Crop damage in US due to atmospheric events since 1950",
+        ylab = "Crop damage [B$]",
+        cex.names=1,
+        las=2)
+
+```
+
+```{r totalDamage,echo=TRUE}
+par(mar = c(15,4,2,2))
+barplot(totalDamage[1:10],
+        main = "Property and Crop damage in US due to atmospheric events since 1950",
+        ylab = "Property and Crop damage [B$]",
+        cex.names=1,
+        las=2)
+
+```
